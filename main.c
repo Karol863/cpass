@@ -14,7 +14,7 @@ int main(void) {
     unsigned char salt[8];
     unsigned char password[34];
     unsigned char decryptedtext[34];
-    unsigned char filename[39];
+    unsigned char filename[38];
     unsigned char ciphertext[49];
     char choice[2];
     int decryptedtext_len, ciphertext_len;
@@ -33,6 +33,7 @@ int main(void) {
         return -1;
     }
     filename[strcspn((char *)filename, "\n")] = '\0';
+    size_t l_filename = strlen((char *)filename);
 
     printf("Enter password (maximum 32 characters!)\n");
     if (fgets((char *)password, sizeof(password), stdin) == NULL) {
@@ -56,7 +57,7 @@ int main(void) {
     if (choice[0] == 'e') {
         ciphertext_len = encrypt(password, l_password, key, iv, ciphertext);
 
-        FILE *in = fopen(strncat((char *)filename, ".aes", sizeof(filename) - strlen((char *)filename) - 1), "w");
+        FILE *in = fopen(strncat((char *)filename, ".aes", sizeof(filename) - l_filename), "w");
         if (in == NULL) {
             puts("File error!");
             return -1;
@@ -81,7 +82,7 @@ int main(void) {
         }
         fclose(in);
     } else if (choice[0] == 'd') {
-        FILE *in = fopen(strncat((char *)filename, ".aes", sizeof(filename) - strlen((char *)filename) - 1), "r");
+        FILE *in = fopen(strncat((char *)filename, ".aes", sizeof(filename) - l_filename), "r");
         if (in == NULL) {
             puts("File error!");
             return -1;
