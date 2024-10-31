@@ -4,7 +4,7 @@
 #include <openssl/err.h>
 #include <openssl/rand.h>
 
-#include "memory.h"
+#include "mbbase.h"
 
 static void handleErrors(void);
 static int encrypt(unsigned char *password, int password_len, unsigned char *key, unsigned char *iv, unsigned char *ciphertext);
