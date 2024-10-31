@@ -1,77 +1,99 @@
+#include <string.h>
+
 #include <openssl/evp.h>
 #include <openssl/err.h>
 #include <openssl/rand.h>
-#include <string.h>
+
+#include "memory.h"
 
 static void handleErrors(void);
 static int encrypt(unsigned char *password, int password_len, unsigned char *key, unsigned char *iv, unsigned char *ciphertext);
 static int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,unsigned char *iv, unsigned char *password);
 
 int main(void) {
-	unsigned char key[32];
-	unsigned char iv[16];
-	unsigned char salt[8];
-	unsigned char ciphertext[49];
-	unsigned char decryptedtext[34];
+	unsigned char key[32] = {0};
+	unsigned char iv[16] = {0};
+	unsigned char salt[8] = {0};
+	unsigned char ciphertext[49] = {0};
+	unsigned char decryptedtext[33] = {0};
 
-	unsigned char password[34];
-	unsigned char filename[38];
-	char choice[2];
-	int decryptedtext_len, ciphertext_len;
+	char password[34] = {0};
+	char filename[38] = {0};
+	char option[2] = {0};
+	int decryptedtext_len = 0;
+	int ciphertext_len = 0;
 
-	if (!(RAND_bytes(iv, sizeof(iv)))) {
+	if (unlikely(RAND_bytes(iv, sizeof(iv)) != 1)) {
 		handleErrors();
 	}
-	if (!(RAND_bytes(salt, sizeof(salt)))) {
-		handleErrors();
-	}
-
-	printf("Enter password (Maximum 32 characters!)\n");
-	fgets((char *)password, sizeof(password), stdin);
-
-	printf("Enter filename (Maximum 32 characters!)\n");
-	fgets((char *)filename, sizeof(filename), stdin);
-
-	printf("Enter choice (Either e or d)\n");
-	fgets(choice, sizeof(choice), stdin);
-
-	size_t password_len = strlen((char *)password);
-	size_t filename_len = strlen((char *)filename);
-
-	password[strcspn((char *)password, "\n")] = '\0';
-	filename[strcspn((char *)filename, "\n")] = '\0';
-	choice[strcspn(choice, "\n")] = '\0';
-
-	if (!(PKCS5_PBKDF2_HMAC((char *)password, password_len, salt, sizeof(salt), 10000, EVP_sha256(), sizeof(key), key))) {
+	if (unlikely(RAND_bytes(salt, sizeof(salt)) != 1)) {
 		handleErrors();
 	}
 
-	if (choice[0] == 'e') {
-		ciphertext_len = encrypt(password, password_len, key, iv, ciphertext);
+	puts("Enter password (Maximum 32 characters!)");
+	if (unlikely(fgets(password, sizeof(password), stdin) == NULL)) {
+		fputs("Failed to read the password!\n", stderr);
+		return -1;
+	}
 
-		FILE *fp = fopen(strncat((char *)filename, ".aes", sizeof(filename) - filename_len), "w");
-		if (fp == NULL) {
-			fputs("Failed to open file!\n", stderr);
+	puts("Enter filename (Maximum 32 characters!)");
+	if (unlikely(fgets(filename, sizeof(filename), stdin) == NULL)) {
+		fputs("Failed to read the filename!\n", stderr);
+		return -1;
+	}
+
+	puts("Enter option (Either e or d)");
+	if (unlikely(fgets(option, sizeof(option), stdin) == NULL)) {
+		fputs("Failed to read the option!\n", stderr);
+		return -1;
+	}
+
+	password[strcspn(password, "\n")] = '\0';
+	filename[strcspn(filename, "\n")] = '\0';
+	option[strcspn(option, "\n")] = '\0';
+
+	u8 password_len = strlen(password);
+
+	if (unlikely(PKCS5_PBKDF2_HMAC(password, password_len, salt, sizeof(salt), 10000, EVP_sha256(), sizeof(key), key) != 1)) {
+		handleErrors();
+	}
+
+	if (option[0] == 'e') {
+		ciphertext_len = encrypt((unsigned char *)password, password_len, key, iv, ciphertext);
+
+		FILE *f = fopen(strncat(filename, ".aes", 5), "w");
+		if (f == NULL) {
+			fputs("File not found!\n", stderr);
 			return -1;
 		}
 
-		fwrite(iv, sizeof(char), sizeof(iv), fp);
-		fwrite(key, sizeof(char), sizeof(key), fp);
-		fwrite(ciphertext, sizeof(char), ciphertext_len, fp);
-
-		fclose(fp);
-	} else if (choice[0] == 'd') {
-		FILE *fp = fopen(strncat((char *)filename, ".aes", sizeof(filename) - filename_len), "r");
-		if (fp == NULL) {
-			fputs("Failed to open file!\n", stderr);
+		fwrite(iv, 1, sizeof(iv), f);
+		fwrite(key, 1, sizeof(key), f);
+		fwrite(ciphertext, 1, ciphertext_len, f);
+		if (unlikely(ferror(f))) {
+			fputs("Failed to write data into a file!\n", stderr);
+			fclose(f);
 			return -1;
 		}
 
-		fread(iv, sizeof(char), sizeof(iv), fp);
-		fread(key, sizeof(char), sizeof(key), fp);
-		ciphertext_len = fread(ciphertext, sizeof(char), sizeof(ciphertext), fp);
+		fclose(f);
+	} else if (option[0] == 'd') {
+		FILE *f = fopen(strncat(filename, ".aes", 4), "r");
+		if (f == NULL) {
+			fputs("File not found!\n", stderr);
+			return -1;
+		}
 
-		fclose(fp);
+		fread(iv, 1, sizeof(iv), f);
+		fread(key, 1, sizeof(key), f);
+		ciphertext_len = fread(ciphertext, 1, sizeof(ciphertext), f);
+		if (unlikely(ferror(f))) {
+			fputs("Failed to read from a file!\n", stderr);
+			fclose(f);
+			return -1;
+		}
+
+		fclose(f);
 
 		decryptedtext_len = decrypt(ciphertext, ciphertext_len, key, iv, decryptedtext);
 		decryptedtext[decryptedtext_len] = '\0';
@@ -89,20 +111,21 @@ void handleErrors(void) {
 
 int encrypt(unsigned char *password, int password_len, unsigned char *key, unsigned char *iv, unsigned char *ciphertext) {
 	EVP_CIPHER_CTX *ctx;
-	int ciphertext_len, len;
+	int ciphertext_len = 0;
+	int len = 0;
 
-	if (!(ctx = EVP_CIPHER_CTX_new())) {
+	if (unlikely((ctx = EVP_CIPHER_CTX_new()) == NULL)) {
 		handleErrors();
 	}
-	if (1 != EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
+	if (unlikely(EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv) != 1)) {
 		handleErrors();
 	}
-	if (1 != EVP_EncryptUpdate(ctx, ciphertext, &len, password, password_len)) {
+	if (unlikely(EVP_EncryptUpdate(ctx, ciphertext, &len, password, password_len) != 1)) {
 		handleErrors();
 	}
 	ciphertext_len = len;
 
-	if (1 != EVP_EncryptFinal_ex(ctx, ciphertext + len, &len)) {
+	if (unlikely(EVP_EncryptFinal_ex(ctx, ciphertext + len, &len) != 1)) {
 		handleErrors();
 	}
 	ciphertext_len += len;
@@ -113,20 +136,21 @@ int encrypt(unsigned char *password, int password_len, unsigned char *key, unsig
 
 int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,unsigned char *iv, unsigned char *password) {
 	EVP_CIPHER_CTX *ctx;
-	int password_len, len;
+	int password_len = 0;
+	int len = 0;
 
-	if (!(ctx = EVP_CIPHER_CTX_new())) {
+	if (unlikely((ctx = EVP_CIPHER_CTX_new()) == NULL)) {
 		handleErrors();
 	}
-	if (1 != EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv)) {
+	if (unlikely(EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, key, iv) != 1)) {
 		handleErrors();
 	}
-	if (1 != EVP_DecryptUpdate(ctx, password, &len, ciphertext, ciphertext_len)) {
+	if (unlikely(EVP_DecryptUpdate(ctx, password, &len, ciphertext, ciphertext_len) != 1)) {
 		handleErrors();
 	}
 	password_len = len;
 
-	if (1 != EVP_DecryptFinal_ex(ctx, password + len, &len)) {
+	if (unlikely(EVP_DecryptFinal_ex(ctx, password + len, &len) != 1)) {
 		handleErrors();
 	}
 	password_len += len;
